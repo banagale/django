@@ -8,6 +8,7 @@ import sys
 import time
 import warnings
 from email.header import Header
+from enum import Enum
 from http.client import responses
 from urllib.parse import urlsplit
 
@@ -97,6 +98,13 @@ class ResponseHeaders(CaseInsensitiveMapping):
 
 class BadHeaderError(ValueError):
     pass
+
+
+class SameSite(Enum):
+    LAX = 'Lax'
+    STRICT = 'Strict'
+    NONE = 'None'
+    NO_SETTING = object()  # Sentinel value to represent "not set"
 
 
 class HttpResponseBase:
@@ -220,22 +228,36 @@ class HttpResponseBase:
         domain=None,
         secure=False,
         httponly=False,
-        samesite=None,
+        samesite=None,  # Allow None as a valid default value
     ):
         """
         Set a cookie.
 
-        ``expires`` can be:
-        - a string in the correct format,
-        - a naive ``datetime.datetime`` object in UTC,
-        - an aware ``datetime.datetime`` object in any time zone.
-        If it is a ``datetime.datetime`` object then calculate ``max_age``.
-
-        ``max_age`` can be:
-        - int/float specifying seconds,
-        - ``datetime.timedelta`` object.
+        ``samesite`` can be:
+        - SameSite.LAX
+        - SameSite.STRICT
+        - SameSite.NONE
+        - None (default) to omit the SameSite attribute.
         """
+
+        if samesite is None:
+            warnings.warn(
+                'You passed None to the "samesite" parameter. If you intended to enable cross-site usage, pass the string "None" instead.',
+                stacklevel=2
+            )
+            # Omitting the SameSite attribute as intended by default
+
         self.cookies[key] = value
+
+        if samesite is not None:
+            if isinstance(samesite, SameSite):
+                self.cookies[key]["samesite"] = samesite.value
+            elif isinstance(samesite, str) and samesite.lower() in (
+            "lax", "none", "strict"):
+                self.cookies[key]["samesite"] = samesite.capitalize()
+            else:
+                raise ValueError('samesite must be "Lax", "None", or "Strict".')
+
         if expires is not None:
             if isinstance(expires, datetime.datetime):
                 if timezone.is_naive(expires):
